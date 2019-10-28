@@ -38,7 +38,7 @@ const crawler = new Crawler({
 
 // counter
 let counter = 0;
-let writerCounter = 0;
+let writerCounter = 1;
 
 function increment(url) {
     console.log(`[${++counter}]${url}`);
