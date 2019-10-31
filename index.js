@@ -10,8 +10,13 @@ const crypto = require("crypto");
 const Crawler = require("crawler");
 const CsvWriteStream = require("csv-write-stream");
 
+const screenshots = require("./screenshots");
+
 const outDir = path.resolve(__dirname, "out");
 fs.ensureDirSync(outDir);
+
+const outScreenshotsDir = path.resolve(outDir, "screenshots");
+fs.ensureDirSync(outScreenshotsDir);
 
 // get unique id for url
 function getId(url) {
@@ -120,7 +125,7 @@ function parseObj(obj) {
     "dátum a čas analýzy obsahu": "",
     "uvádzaný zdroj/zdroje - meno a link": obj.credits,
     "zdroje, z ktorých by mohol byť obsah - linky": "",
-    "názov uloženého článku (PDF/obrázok)": "",
+    "názov uloženého článku (PDF/obrázok)": obj.fileName,
     "Kto analyzoval obsah": ""
   });
 }
@@ -231,11 +236,13 @@ function articleCallback(e, response, done) {
     }
 
     const parsedDate = new Date(timestamp).toGMTString();
+    const fileName = `${getId(url)}.jpeg`;
 
     if (!title || !date || !author) {
       error(url, [title, date, author].join(","));
     } else {
       const obj = {
+        fileName,
         url,
         author,
         parsedDate,
@@ -253,49 +260,57 @@ function articleCallback(e, response, done) {
       } else {
         console.log(obj);
       }
+
+      screenshots.queue(url, path.join(outScreenshotsDir, fileName));
     }
 
     done();
   }
 }
 
-// DEVELOPMENT
-if (dev) {
-  crawler.queue({
-    uri:
-      "https://filmkult.refresher.sk/14564-Joker-je-najzarobkovejsim-Rkovym-filmom-historie-a-splha-k-miliarde-Zombieland-2-prekona-trzby-jednotky-Box-Office",
-    callback: articleCallback
-  });
-} else {
-  // first feed page
-  crawler.queue({
-    uri: "https://refresher.sk/news",
-    callback: freshNewsCallback
-  });
+(async () => {
+  await screenshots.startService();
 
-  // other feed pages
-  new Array(FEED_PAGES).fill(null).forEach((_, index) => {
-    const uri = `https://refresher.sk/news/${index + 1}`;
-
+  // DEVELOPMENT
+  if (dev) {
     crawler.queue({
-      uri,
+      uri:
+        "https://filmkult.refresher.sk/14564-Joker-je-najzarobkovejsim-Rkovym-filmom-historie-a-splha-k-miliarde-Zombieland-2-prekona-trzby-jednotky-Box-Office",
+      callback: articleCallback
+    });
+  } else {
+    // first feed page
+    crawler.queue({
+      uri: "https://refresher.sk/news",
       callback: freshNewsCallback
     });
-  });
 
-  // home pages
-  crawler.queue({
-    uri: "https://refresher.sk/news",
-    callback: articlesCallback
-  });
+    // other feed pages
+    new Array(FEED_PAGES).fill(null).forEach((_, index) => {
+      const uri = `https://refresher.sk/news/${index + 1}`;
 
-  // other article pages
-  new Array(ARTICLE_PAGES).fill(null).forEach((_, index) => {
-    const uri = `https://refresher.sk/page/${index + 1}`;
+      crawler.queue({
+        uri,
+        callback: freshNewsCallback
+      });
+    });
 
+    // home pages
     crawler.queue({
-      uri,
+      uri: "https://refresher.sk/news",
       callback: articlesCallback
     });
-  });
-}
+
+    // other article pages
+    new Array(ARTICLE_PAGES).fill(null).forEach((_, index) => {
+      const uri = `https://refresher.sk/page/${index + 1}`;
+
+      crawler.queue({
+        uri,
+        callback: articlesCallback
+      });
+    });
+  }
+
+  await screenshots.closeService();
+})();
