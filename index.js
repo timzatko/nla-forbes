@@ -235,7 +235,7 @@ function articleCallback(e, response, done) {
       return;
     }
 
-    const parsedDate = new Date(timestamp).toGMTString();
+    const parsedDate = new Date(timestamp).toLocaleString('sk-SK');
     const fileName = `${getId(url)}.jpeg`;
 
     if (!title || !date || !author) {
