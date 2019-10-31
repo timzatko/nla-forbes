@@ -203,6 +203,10 @@ function articlesCallback(e, response, done) {
   }
 }
 
+function q(num) {
+  return num < 10 ? "0" + num.toString() : num.toString();
+}
+
 function articleCallback(e, response, done) {
   const { $, request } = response;
   const url = request.uri.href;
@@ -235,8 +239,11 @@ function articleCallback(e, response, done) {
       return;
     }
 
-    const parsedDate = new Date(timestamp).toLocaleString('sk-SK');
-    const fileName = `${getId(url)}.jpeg`;
+    const parsedDate = new Date(timestamp).toLocaleString("sk-SK");
+    const year = new Date(timestamp).getFullYear();
+    const month = new Date(timestamp).getMonth() + 1;
+    const day = new Date(timestamp).getDate();
+    const fileName = `${year}_${q(month)}_${q(day)}_${getId(url)}.jpeg`;
 
     if (!title || !date || !author) {
       error(url, [title, date, author].join(","));
