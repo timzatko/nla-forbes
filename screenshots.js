@@ -62,6 +62,7 @@ function pop() {
     const args = commandQueue.shift();
 
     if (args) {
+      console.log(`processing queue, queue length is ${commandQueue.length}`);
       take(...args);
     } else if (shouldClose) {
       browser.close();
