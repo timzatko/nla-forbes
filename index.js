@@ -8,15 +8,15 @@ const fs = require("fs-extra");
 const crypto = require("crypto");
 
 const Crawler = require("crawler");
-const CsvWriteStream = require("csv-write-stream");
+const NodeJsonDb = require("node-json-db");
 
-const screenshots = require("./screenshots");
+const db = new NodeJsonDb.JsonDB("out", true, true);
 
 const outDir = path.resolve(__dirname, "out");
 fs.ensureDirSync(outDir);
 
-const outScreenshotsDir = path.resolve(outDir, "screenshots");
-fs.ensureDirSync(outScreenshotsDir);
+const outHtmlDir = path.resolve(outDir, "html");
+fs.ensureDirSync(outHtmlDir);
 
 // get unique id for url
 function getId(url) {
@@ -29,15 +29,12 @@ function getId(url) {
 
 // get html path for url
 function getHtmlOutPath(url) {
-  return path.resolve(outDir, getId(url) + ".html");
+  return path.resolve(outHtmlDir, getId(url) + ".html");
 }
-
-// output to csv
-const csvWriter = CsvWriteStream();
-csvWriter.pipe(fs.createWriteStream("out.csv", { flags: "a" }));
 
 // crawler
 const crawler = new Crawler({
+  // rateLimit: 1000,
   maxConnections: 5
 });
 
@@ -115,21 +112,6 @@ function parseMonth(month) {
   ].indexOf(month);
 }
 
-function parseObj(obj) {
-  return (newObj = {
-    "#": writerCounter,
-    "titulok článku": obj.title,
-    URL: obj.url,
-    "uvádzaní autori": obj.author,
-    "dátum a čas vydania": obj.parsedDate,
-    "dátum a čas analýzy obsahu": "",
-    "uvádzaný zdroj/zdroje - meno a link": obj.credits,
-    "zdroje, z ktorých by mohol byť obsah - linky": "",
-    "názov uloženého článku (PDF/obrázok)": obj.fileName,
-    "Kto analyzoval obsah": ""
-  });
-}
-
 function getText($, el) {
   const elements = Array.from(el);
 
@@ -156,17 +138,21 @@ function freshNewsCallback(e, response, done) {
       $(".FlashNews-Item .FlashNews-Item-Text a")
     ).map(el => $(el).attr("href"));
 
+    let queueCounter = 0;
+
     articleUrls
       .filter(url => !isCrawled(url))
       .filter(url => canVisit(url))
       .forEach(url => {
+        ++queueCounter;
+
         crawler.queue({
           uri: url,
           callback: articleCallback
         });
       });
 
-    fs.createWriteStream(getHtmlOutPath(url)).write("");
+    console.log(`${queueCounter} enqueued from ${url}`);
 
     done();
   }
@@ -187,20 +173,28 @@ function articlesCallback(e, response, done) {
       $(el).attr("href")
     );
 
+    let queueCounter = 0;
+
     articleUrls
       .filter(url => !isCrawled(url))
       .filter(url => canVisit(url))
       .forEach(url => {
+        ++queueCounter;
+
         crawler.queue({
           uri: url,
           callback: articleCallback
         });
       });
 
-    fs.createWriteStream(getHtmlOutPath(url)).write("");
+    console.log(`${queueCounter} enqueued from ${url}`);
 
     done();
   }
+}
+
+function setVisited(url) {
+  return fs.createWriteStream(getHtmlOutPath(url)).write("");
 }
 
 function q(num) {
@@ -233,10 +227,13 @@ function articleCallback(e, response, done) {
 
     if (!timestamp) {
       error(url, `timestamp:${timestamp}`);
+      return done();
     }
 
     if (timestamp < new Date(2019, 9) || timestamp > new Date(2019, 10)) {
-      return;
+      setVisited(url);
+      error(url, `out of timestamp`);
+      return done();
     }
 
     const parsedDate = new Date(timestamp).toLocaleString("sk-SK");
@@ -247,28 +244,28 @@ function articleCallback(e, response, done) {
 
     if (!title || !date || !author) {
       error(url, [title, date, author].join(","));
+      return done();
+    }
+    const obj = {
+      timestamp,
+      fileName,
+      url,
+      author,
+      parsedDate,
+      title,
+      credits
+    };
+
+    if (!dev) {
+      setVisited(url);
+
+      db.push(`/${getId(url)}`, obj);
+
+      ++writerCounter;
+
+      increment(url);
     } else {
-      const obj = {
-        fileName,
-        url,
-        author,
-        parsedDate,
-        title,
-        credits
-      };
-
-      if (!dev) {
-        fs.createWriteStream(getHtmlOutPath(url)).write("");
-        csvWriter.write(parseObj(obj));
-
-        ++writerCounter;
-
-        increment(url);
-      } else {
-        console.log(obj);
-      }
-
-      screenshots.queue(url, path.join(outScreenshotsDir, fileName));
+      console.log(obj);
     }
 
     done();
@@ -276,8 +273,6 @@ function articleCallback(e, response, done) {
 }
 
 (async () => {
-  await screenshots.startService();
-
   // DEVELOPMENT
   if (dev) {
     crawler.queue({
@@ -304,7 +299,7 @@ function articleCallback(e, response, done) {
 
     // home pages
     crawler.queue({
-      uri: "https://refresher.sk/news",
+      uri: "https://refresher.sk",
       callback: articlesCallback
     });
 
@@ -318,6 +313,4 @@ function articleCallback(e, response, done) {
       });
     });
   }
-
-  await screenshots.closeService();
 })();

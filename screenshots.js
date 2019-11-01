@@ -11,9 +11,10 @@ let shouldClose = false;
 async function startService() {
   browser = await puppeteer.launch();
   page = await browser.newPage();
+  return closeService;
 }
 
-async function closeService() {
+function closeService() {
   shouldClose = true;
 }
 
